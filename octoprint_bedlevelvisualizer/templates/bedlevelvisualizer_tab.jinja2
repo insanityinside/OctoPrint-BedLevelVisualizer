@@ -8,8 +8,22 @@
 	</div>
 </div>
 <div class="row-fluid" id="bedlevelvisualizerwait" style="text-align: center;font-size: 25px;vertical-align: middle;padding-bottom: 25px;height: 465px;" data-bind="visible: processing() && (!settingsViewModel.settings.plugins.bedlevelvisualizer.show_webcam() || settingsViewModel.webcam_streamUrl() == '')">
-	<div class="row-fluid" style="padding-top: 220px;">
+	<div class="row-fluid" style="padding-top: 180px;">
 		<i class="icon-spinner icon-spin icon-3"></i> <b>Please wait, retrieving current mesh.</b>
+		<!-- ko if: probe_total() > 0 -->
+		<div style="margin-top: 20px; font-size: 18px;">
+			<div>Probing point <span data-bind="text: probe_current"></span> of <span data-bind="text: probe_total"></span></div>
+			<div style="margin-top: 10px;">
+				<div style="width: 300px; height: 20px; background-color: #e0e0e0; border-radius: 10px; margin: 0 auto; overflow: hidden;">
+					<div style="height: 100%; background-color: #5cb85c; border-radius: 10px; transition: width 0.3s ease;" data-bind="style: { width: probe_percentage() + '%' }"></div>
+				</div>
+				<div style="margin-top: 5px;"><span data-bind="text: probe_percentage"></span>% complete</div>
+			</div>
+			<!-- ko if: probe_eta_formatted() -->
+			<div style="margin-top: 10px; font-size: 16px;">Estimated time remaining: <span data-bind="text: probe_eta_formatted"></span></div>
+			<!-- /ko -->
+		</div>
+		<!-- /ko -->
 	</div>
 </div>
 <div class="row-fluid" id="bedlevelvisualizerwarning" style="text-align: center;font-size: 25px;vertical-align: middle;" data-bind="visible: !loginStateViewModel.isUser()"><i class="icon-warning-sign icon-3" style="color:red"></i> <b>You must be logged in.</b></div>

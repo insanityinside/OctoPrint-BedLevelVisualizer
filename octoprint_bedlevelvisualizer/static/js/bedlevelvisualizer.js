@@ -25,6 +25,33 @@ $(function () {
 		self.save_snapshots = ko.observable(false);
 		self.selected_command = ko.observable();
 		self.settings_active = ko.observable(false);
+		// Progress tracking observables
+		self.probe_current = ko.observable(0);
+		self.probe_total = ko.observable(0);
+		self.probe_eta_seconds = ko.observable(null);
+		self.probe_percentage = ko.computed(function() {
+			if (self.probe_total() > 0) {
+				return Math.round((self.probe_current() / self.probe_total()) * 100);
+			}
+			return 0;
+		});
+		self.probe_eta_formatted = ko.computed(function() {
+			var eta = self.probe_eta_seconds();
+			if (eta === null || eta === undefined) {
+				return null;
+			}
+			if (eta < 60) {
+				return eta + 's';
+			} else if (eta < 3600) {
+				var mins = Math.floor(eta / 60);
+				var secs = eta % 60;
+				return mins + 'm ' + secs + 's';
+			} else {
+				var hours = Math.floor(eta / 3600);
+				var mins = Math.floor((eta % 3600) / 60);
+				return hours + 'h ' + mins + 'm';
+			}
+		});
 		self.webcam_streamUrl = ko.computed(function(){
 			if(self.processing() && self.settingsViewModel.settings.plugins.bedlevelvisualizer.show_webcam() && (self.settingsViewModel.webcam_streamUrl() !== "")) {
 				return self.settingsViewModel.webcam_streamUrl();
@@ -34,6 +61,13 @@ $(function () {
 		});
 		self.mesh_status = ko.computed(function(){
 			if(self.processing()){
+				if (self.probe_total() > 0) {
+					var status = 'Probing point ' + self.probe_current() + '/' + self.probe_total() + ' (' + self.probe_percentage() + '%)';
+					if (self.probe_eta_formatted()) {
+						status += ' - ETA: ' + self.probe_eta_formatted();
+					}
+					return status;
+				}
 				return 'Collecting mesh data.';
 			}
 			if (self.save_mesh() && self.mesh_data().length > 0) {
@@ -185,6 +219,10 @@ $(function () {
 			if (mesh_data.error) {
 				clearTimeout(self.timeout);
 				self.processing(false);
+				// Reset progress on error
+				self.probe_current(0);
+				self.probe_total(0);
+				self.probe_eta_seconds(null);
 				new PNotify({
 					title: 'Bed Visualizer Error',
 					text: '<div class="row-fluid"><p>Looks like your settings are not correct or there was an error.</p><p>Please see the <a href="https://github.com/jneilliii/OctoPrint-BedLevelVisualizer/#tips" target="_blank">Readme</a> for configuration tips.</p></div><p><pre style="padding-top: 5px;">'+_.escape(mesh_data.error)+'</pre></p>',
@@ -194,6 +232,15 @@ $(function () {
 			}
 			if (mesh_data.processing) {
 				self.processing(true);
+				// Reset progress when starting
+				self.probe_current(0);
+				self.probe_total(0);
+				self.probe_eta_seconds(null);
+			}
+			if (mesh_data.progress) {
+				self.probe_current(mesh_data.progress.current);
+				self.probe_total(mesh_data.progress.total);
+				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
 			}
 			if (mesh_data.timeout_override) {
 				// console.log('Resetting timeout to ' + mesh_data.timeout_override + ' seconds.');
@@ -208,6 +255,10 @@ $(function () {
 			// console.log(mesh_data_z);
 			clearTimeout(self.timeout);
 			self.processing(false);
+			// Reset progress
+			self.probe_current(0);
+			self.probe_total(0);
+			self.probe_eta_seconds(null);
 			if ( self.save_mesh()) {
 				if (store_data) {
 					self.settingsViewModel.settings.plugins.bedlevelvisualizer.stored_mesh(mesh_data_z);
@@ -438,6 +489,10 @@ $(function () {
 				if(data.stopped){
 					clearTimeout(self.timeout);
 					self.processing(false);
+					// Reset progress
+					self.probe_current(0);
+					self.probe_total(0);
+					self.probe_eta_seconds(null);
 				}
 				});
 		};

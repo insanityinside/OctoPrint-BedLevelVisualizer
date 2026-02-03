@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 
 import threading
+import time
 
 import octoprint.plugin
 from octoprint.events import Events
@@ -39,6 +40,11 @@ class bedlevelvisualizer(
 		self.flip_x = False
 		self.flip_y = False
 		self.timeout_override = False
+		# Progress tracking
+		self.probe_current = 0
+		self.probe_total = 0
+		self.probe_first_time = None
+		self.probe_second_time = None
 		self._logger = logging.getLogger(
 			"octoprint.plugins.bedlevelvisualizer")
 		self._bedlevelvisualizer_logger = logging.getLogger(
@@ -67,6 +73,9 @@ class bedlevelvisualizer(
 		self.regex_eqn_coefficients = re.compile(r"^Eqn coefficients:.+$")
 		self.regex_unknown_command = re.compile(
 			r"echo:Unknown command: \"@BEDLEVELVISUALIZER\""
+		)
+		self.regex_probing_point = re.compile(
+			r"Probing mesh point (\d+)/(\d+)"
 		)
 
 	# SettingsPlugin
@@ -207,6 +216,11 @@ class bedlevelvisualizer(
 	def enable_mesh_collection(self):
 		self.mesh = []
 		self.box = []
+		# Reset progress tracking
+		self.probe_current = 0
+		self.probe_total = 0
+		self.probe_first_time = None
+		self.probe_second_time = None
 		self._bedlevelvisualizer_logger.debug("mesh collection started")
 		self.processing = True
 		self._plugin_manager.send_plugin_message(
@@ -236,6 +250,52 @@ class bedlevelvisualizer(
 			return line
 		if not self.processing:
 			return line
+
+		# Check for probing progress messages
+		probing_match = self.regex_probing_point.search(line)
+		if probing_match:
+			current = int(probing_match.group(1))
+			total = int(probing_match.group(2))
+			current_time = time.time()
+
+			# Track timing for ETA calculation
+			# We ignore the first probe timing because there's often a preheat delay
+			if current == 1:
+				# First probe - just record the time, don't use for averaging
+				self.probe_first_time = current_time
+				self.probe_second_time = None
+			elif current == 2:
+				# Second probe - this is our real timing baseline
+				self.probe_second_time = current_time
+
+			self.probe_current = current
+			self.probe_total = total
+
+			# Calculate ETA based on time from probe 2 to current
+			eta_seconds = None
+			if current > 2 and self.probe_second_time is not None:
+				# Calculate average time per probe (excluding first probe)
+				elapsed_since_second = current_time - self.probe_second_time
+				probes_since_second = current - 2
+				if probes_since_second > 0:
+					avg_time_per_point = elapsed_since_second / probes_since_second
+					remaining_points = total - current
+					eta_seconds = int(avg_time_per_point * remaining_points)
+
+			# Send progress update to frontend
+			self._plugin_manager.send_plugin_message(
+				self._identifier,
+				dict(
+					progress=dict(
+						current=current,
+						total=total,
+						eta_seconds=eta_seconds
+					)
+				)
+			)
+			self._bedlevelvisualizer_logger.debug(
+				"Probing progress: {}/{}, ETA: {}s".format(current, total, eta_seconds)
+			)
 
 		if self._settings.get_boolean(
 			["ignore_correction_matrix"]
