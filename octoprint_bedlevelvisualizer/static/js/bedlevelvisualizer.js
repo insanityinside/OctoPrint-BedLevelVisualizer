@@ -29,6 +29,7 @@ $(function () {
 		self.probe_current = ko.observable(0);
 		self.probe_total = ko.observable(0);
 		self.probe_eta_seconds = ko.observable(null);
+		self.etaCountdownTimer = null;
 		self.probe_percentage = ko.computed(function() {
 			if (self.probe_total() > 0) {
 				return Math.round((self.probe_current() / self.probe_total()) * 100);
@@ -52,6 +53,22 @@ $(function () {
 				return hours + 'h ' + mins + 'm';
 			}
 		});
+		// ETA countdown timer functions
+		self.startEtaCountdown = function() {
+			self.stopEtaCountdown();
+			self.etaCountdownTimer = setInterval(function() {
+				var current = self.probe_eta_seconds();
+				if (current !== null && current > 0) {
+					self.probe_eta_seconds(current - 1);
+				}
+			}, 1000);
+		};
+		self.stopEtaCountdown = function() {
+			if (self.etaCountdownTimer) {
+				clearInterval(self.etaCountdownTimer);
+				self.etaCountdownTimer = null;
+			}
+		};
 		self.webcam_streamUrl = ko.computed(function(){
 			if(self.processing() && self.settingsViewModel.settings.plugins.bedlevelvisualizer.show_webcam() && (self.settingsViewModel.webcam_streamUrl() !== "")) {
 				return self.settingsViewModel.webcam_streamUrl();
@@ -220,6 +237,7 @@ $(function () {
 				clearTimeout(self.timeout);
 				self.processing(false);
 				// Reset progress on error
+				self.stopEtaCountdown();
 				self.probe_current(0);
 				self.probe_total(0);
 				self.probe_eta_seconds(null);
@@ -233,6 +251,7 @@ $(function () {
 			if (mesh_data.processing) {
 				self.processing(true);
 				// Reset progress when starting
+				self.stopEtaCountdown();
 				self.probe_current(0);
 				self.probe_total(0);
 				self.probe_eta_seconds(null);
@@ -241,6 +260,10 @@ $(function () {
 				self.probe_current(mesh_data.progress.current);
 				self.probe_total(mesh_data.progress.total);
 				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
+				// Start/restart countdown timer when we have a valid ETA
+				if (mesh_data.progress.eta_seconds !== null) {
+					self.startEtaCountdown();
+				}
 			}
 			if (mesh_data.timeout_override) {
 				// console.log('Resetting timeout to ' + mesh_data.timeout_override + ' seconds.');
@@ -256,6 +279,7 @@ $(function () {
 			clearTimeout(self.timeout);
 			self.processing(false);
 			// Reset progress
+			self.stopEtaCountdown();
 			self.probe_current(0);
 			self.probe_total(0);
 			self.probe_eta_seconds(null);
@@ -490,6 +514,7 @@ $(function () {
 					clearTimeout(self.timeout);
 					self.processing(false);
 					// Reset progress
+					self.stopEtaCountdown();
 					self.probe_current(0);
 					self.probe_total(0);
 					self.probe_eta_seconds(null);
