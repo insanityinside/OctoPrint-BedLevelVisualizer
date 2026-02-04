@@ -30,11 +30,11 @@ $(function () {
 		self.probe_total = ko.observable(0);
 		self.probe_eta_seconds = ko.observable(null);
 		self.etaCountdownTimer = null;
+		self.probe_percentage_internal = ko.observable(0);  // Float for smooth bar animation
+		self.probe_percentage_display = ko.observable(0);  // Integer for text display
 		self.probe_percentage = ko.computed(function() {
-			if (self.probe_total() > 0) {
-				return Math.round((self.probe_current() / self.probe_total()) * 100);
-			}
-			return 0;
+			// Return the smoothly animated float value for progress bar
+			return self.probe_percentage_internal();
 		});
 		self.probe_eta_formatted = ko.computed(function() {
 			var eta = self.probe_eta_seconds();
@@ -57,9 +57,44 @@ $(function () {
 		self.startEtaCountdown = function() {
 			self.stopEtaCountdown();
 			self.etaCountdownTimer = setInterval(function() {
-				var current = self.probe_eta_seconds();
-				if (current !== null && current > 0) {
-					self.probe_eta_seconds(current - 1);
+				// ETA countdown
+				var currentEta = self.probe_eta_seconds();
+				if (currentEta !== null && currentEta > 0) {
+					self.probe_eta_seconds(currentEta - 1);
+				}
+
+				// Smooth percentage animation
+				var total = self.probe_total();
+				var currentPoint = self.probe_current();
+				if (total > 0 && currentPoint < total) {
+					// Use floating-point percentages for smooth animation
+					var basePctFloat = (currentPoint / total) * 100;
+					var nextPctFloat = ((currentPoint + 1) / total) * 100;
+
+					var eta = self.probe_eta_seconds();
+					var remainingPoints = total - currentPoint;
+
+					if (eta !== null && eta > 0 && remainingPoints > 0) {
+						// Calculate increment rate to smoothly progress between probes
+						var timePerPoint = eta / remainingPoints;
+						var pctRange = nextPctFloat - basePctFloat;
+						var incrementPerSecond = pctRange / timePerPoint;
+
+						var currentInternal = self.probe_percentage_internal();
+						currentInternal += incrementPerSecond;
+
+						// Cap just below next point's percentage to prevent jumping
+						var maxInternalPct = nextPctFloat - 0.01;
+						currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
+						self.probe_percentage_internal(currentInternal);
+
+						// For display integer, cap at one below what next point would show
+						var nextDisplayInt = Math.round(nextPctFloat);
+						var maxDisplayInt = Math.max(Math.floor(basePctFloat), nextDisplayInt - 1);
+						var displayPct = Math.floor(currentInternal);
+						displayPct = Math.min(displayPct, maxDisplayInt);
+						self.probe_percentage_display(displayPct);
+					}
 				}
 			}, 1000);
 		};
@@ -79,7 +114,7 @@ $(function () {
 		self.mesh_status = ko.computed(function(){
 			if(self.processing()){
 				if (self.probe_total() > 0) {
-					var status = 'Probing point ' + self.probe_current() + '/' + self.probe_total() + ' (' + self.probe_percentage() + '%)';
+					var status = 'Probing point ' + self.probe_current() + '/' + self.probe_total() + ' (' + self.probe_percentage_display() + '%)';
 					if (self.probe_eta_formatted()) {
 						status += ' - ETA: ' + self.probe_eta_formatted();
 					}
@@ -241,6 +276,8 @@ $(function () {
 				self.probe_current(0);
 				self.probe_total(0);
 				self.probe_eta_seconds(null);
+				self.probe_percentage_internal(0);
+				self.probe_percentage_display(0);
 				new PNotify({
 					title: 'Bed Visualizer Error',
 					text: '<div class="row-fluid"><p>Looks like your settings are not correct or there was an error.</p><p>Please see the <a href="https://github.com/jneilliii/OctoPrint-BedLevelVisualizer/#tips" target="_blank">Readme</a> for configuration tips.</p></div><p><pre style="padding-top: 5px;">'+_.escape(mesh_data.error)+'</pre></p>',
@@ -255,11 +292,17 @@ $(function () {
 				self.probe_current(0);
 				self.probe_total(0);
 				self.probe_eta_seconds(null);
+				self.probe_percentage_internal(0);
+				self.probe_percentage_display(0);
 			}
 			if (mesh_data.progress) {
 				self.probe_current(mesh_data.progress.current);
 				self.probe_total(mesh_data.progress.total);
 				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
+				// Set percentage to actual calculated value from server
+				var actualPct = (mesh_data.progress.current / mesh_data.progress.total) * 100;
+				self.probe_percentage_internal(actualPct);
+				self.probe_percentage_display(Math.round(actualPct));
 				// Start/restart countdown timer when we have a valid ETA
 				if (mesh_data.progress.eta_seconds !== null) {
 					self.startEtaCountdown();
@@ -283,6 +326,8 @@ $(function () {
 			self.probe_current(0);
 			self.probe_total(0);
 			self.probe_eta_seconds(null);
+			self.probe_percentage_internal(0);
+			self.probe_percentage_display(0);
 			if ( self.save_mesh()) {
 				if (store_data) {
 					self.settingsViewModel.settings.plugins.bedlevelvisualizer.stored_mesh(mesh_data_z);
@@ -518,6 +563,8 @@ $(function () {
 					self.probe_current(0);
 					self.probe_total(0);
 					self.probe_eta_seconds(null);
+					self.probe_percentage_internal(0);
+					self.probe_percentage_display(0);
 				}
 				});
 		};

@@ -17,7 +17,7 @@
 				<div style="width: 300px; height: 20px; background-color: #e0e0e0; border-radius: 10px; margin: 0 auto; overflow: hidden;">
 					<div style="height: 100%; background-color: #5cb85c; border-radius: 10px; transition: width 0.3s ease;" data-bind="style: { width: probe_percentage() + '%' }"></div>
 				</div>
-				<div style="margin-top: 5px;"><span data-bind="text: probe_percentage"></span>% complete</div>
+				<div style="margin-top: 5px;"><span data-bind="text: probe_percentage_display"></span>% complete</div>
 			</div>
 			<!-- ko if: probe_eta_formatted() -->
 			<div style="margin-top: 10px; font-size: 16px;">Estimated time remaining: <span data-bind="text: probe_eta_formatted"></span></div>
