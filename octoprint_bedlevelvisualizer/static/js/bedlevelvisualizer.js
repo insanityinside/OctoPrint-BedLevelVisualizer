@@ -343,7 +343,9 @@ $(function () {
 				self.probe_current(mesh_data.progress.current);
 				self.probe_total(mesh_data.progress.total);
 
-				// Track time between probe completions for smoother animation
+				// Track time between probe completions for progress bar animation timing.
+				// This is separate from the backend ETA calculation - avgProbeDuration is used
+				// to calculate the animation timer interval for smooth progress bar updates.
 				if (mesh_data.progress.current > prevPoint && self.lastProbeTime !== null) {
 					var duration = now - self.lastProbeTime;
 					self.probeDurations.push(duration);
@@ -357,24 +359,8 @@ $(function () {
 				}
 				self.lastProbeTime = now;
 
-				// Adjust ETA to include time for current probe point
-				var reportedEta = mesh_data.progress.eta_seconds;
-				if (reportedEta !== null) {
-					// Add estimated time for current probe (reported ETA only covers remaining points)
-					var currentProbeTime = 0;
-					if (self.avgProbeDuration !== null) {
-						currentProbeTime = Math.round(self.avgProbeDuration / 1000);
-					} else if (reportedEta > 0) {
-						// Estimate from reported ETA if no measurements yet
-						var remainingPoints = mesh_data.progress.total - mesh_data.progress.current;
-						if (remainingPoints > 0) {
-							currentProbeTime = Math.round(reportedEta / remainingPoints);
-						}
-					}
-					self.probe_eta_seconds(reportedEta + currentProbeTime);
-				} else {
-					self.probe_eta_seconds(null);
-				}
+				// ETA is calculated by the backend and includes time for the current probe
+				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
 
 				// Set percentage to actual calculated value from server
 				// Use total+1 as denominator to reserve 100% for actual completion

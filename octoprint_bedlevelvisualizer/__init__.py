@@ -279,7 +279,8 @@ class bedlevelvisualizer(
 				probes_since_second = current - 2
 				if probes_since_second > 0:
 					avg_time_per_point = elapsed_since_second / probes_since_second
-					remaining_points = total - current
+					# Include current probe in remaining time (+1) since it's still being processed
+					remaining_points = total - current + 1
 					eta_seconds = int(avg_time_per_point * remaining_points)
 
 			# Send progress update to frontend
