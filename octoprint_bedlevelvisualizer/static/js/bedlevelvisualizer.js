@@ -31,9 +31,11 @@ $(function () {
 		self.probe_eta_seconds = ko.observable(null);
 		self.etaCountdownTimer = null;
 		self.animationTimer = null;
+		self.animationTickInterval = null;
 		self.lastProbeTime = null;
 		self.probeDurations = [];
 		self.avgProbeDuration = null;
+		self.updatesPerProbe = 10;  // Target number of progress updates per probe point
 		self.probe_percentage_internal = ko.observable(0);  // Float for smooth bar animation
 		self.probe_percentage_display = ko.observable(0);  // Integer for text display
 		self.probe_percentage = ko.computed(function() {
@@ -73,46 +75,57 @@ $(function () {
 				self.etaCountdownTimer = null;
 			}
 		};
-		// Smooth animation timer (500ms interval for progress bar)
+		// Smooth animation timer with dynamic interval based on measured probe duration
+		self.calculateTickInterval = function() {
+			var estimatedDuration = null;
+			if (self.avgProbeDuration !== null) {
+				estimatedDuration = self.avgProbeDuration;
+			} else {
+				var eta = self.probe_eta_seconds();
+				var total = self.probe_total();
+				var currentPoint = self.probe_current();
+				// Include the current point being probed in remaining count
+				var remainingPoints = total - currentPoint + 1;
+				if (eta !== null && eta > 0 && remainingPoints > 0) {
+					estimatedDuration = (eta / remainingPoints) * 1000; // Convert to ms
+				}
+			}
+			if (estimatedDuration !== null && estimatedDuration > 0) {
+				// Calculate interval to achieve target updates per probe, with min/max bounds
+				var interval = Math.floor(estimatedDuration / self.updatesPerProbe);
+				return Math.max(200, Math.min(interval, 1000)); // Clamp between 200ms and 1s
+			}
+			return 500; // Default fallback
+		};
 		self.startAnimationTimer = function() {
 			self.stopAnimationTimer();
-			var tickInterval = 500; // ms
+			var tickInterval = self.calculateTickInterval();
+			self.animationTickInterval = tickInterval;
 			self.animationTimer = setInterval(function() {
 				var total = self.probe_total();
 				var currentPoint = self.probe_current();
-				if (total > 0 && currentPoint < total) {
-					var basePctFloat = (currentPoint / total) * 100;
-					var nextPctFloat = ((currentPoint + 1) / total) * 100;
+				// Use total+1 as denominator to reserve 100% for actual completion
+				var pctDenominator = total + 1;
+				if (total > 0 && currentPoint <= total) {
+					var basePctFloat = (currentPoint / pctDenominator) * 100;
+					var nextPctFloat = ((currentPoint + 1) / pctDenominator) * 100;
 					var pctRange = nextPctFloat - basePctFloat;
 
-					// Use measured average duration if available, otherwise fall back to ETA estimate
-					var estimatedDuration = null;
-					if (self.avgProbeDuration !== null) {
-						estimatedDuration = self.avgProbeDuration;
-					} else {
-						var eta = self.probe_eta_seconds();
-						var remainingPoints = total - currentPoint;
-						if (eta !== null && eta > 0 && remainingPoints > 0) {
-							estimatedDuration = (eta / remainingPoints) * 1000; // Convert to ms
-						}
-					}
+					// Increment by 1/updatesPerProbe of the range each tick
+					var incrementPerTick = pctRange / self.updatesPerProbe;
+					var currentInternal = self.probe_percentage_internal();
+					currentInternal += incrementPerTick;
 
-					if (estimatedDuration !== null && estimatedDuration > 0) {
-						var incrementPerTick = pctRange / (estimatedDuration / tickInterval);
-						var currentInternal = self.probe_percentage_internal();
-						currentInternal += incrementPerTick;
+					// Cap at floor of next point's percentage minus 1 to never exceed confirmed data
+					var maxDisplayInt = Math.floor(nextPctFloat) - 1;
+					var maxInternalPct = maxDisplayInt + 0.99;
+					currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
+					self.probe_percentage_internal(currentInternal);
 
-						// Cap at floor of next point's percentage minus 1 to never exceed confirmed data
-						var maxDisplayInt = Math.floor(nextPctFloat) - 1;
-						var maxInternalPct = maxDisplayInt + 0.99;
-						currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
-						self.probe_percentage_internal(currentInternal);
-
-						// Display integer capped at one below what next point would show
-						var displayPct = Math.floor(currentInternal);
-						displayPct = Math.max(Math.floor(basePctFloat), Math.min(displayPct, maxDisplayInt));
-						self.probe_percentage_display(displayPct);
-					}
+					// Display integer capped at one below what next point would show
+					var displayPct = Math.floor(currentInternal);
+					displayPct = Math.max(Math.floor(basePctFloat), Math.min(displayPct, maxDisplayInt));
+					self.probe_percentage_display(displayPct);
 				}
 			}, tickInterval);
 		};
@@ -300,6 +313,7 @@ $(function () {
 				self.lastProbeTime = null;
 				self.probeDurations = [];
 				self.avgProbeDuration = null;
+				self.animationTickInterval = null;
 				new PNotify({
 					title: 'Bed Visualizer Error',
 					text: '<div class="row-fluid"><p>Looks like your settings are not correct or there was an error.</p><p>Please see the <a href="https://github.com/jneilliii/OctoPrint-BedLevelVisualizer/#tips" target="_blank">Readme</a> for configuration tips.</p></div><p><pre style="padding-top: 5px;">'+_.escape(mesh_data.error)+'</pre></p>',
@@ -320,6 +334,7 @@ $(function () {
 				self.lastProbeTime = null;
 				self.probeDurations = [];
 				self.avgProbeDuration = null;
+				self.animationTickInterval = null;
 			}
 			if (mesh_data.progress) {
 				var now = Date.now();
@@ -327,7 +342,6 @@ $(function () {
 
 				self.probe_current(mesh_data.progress.current);
 				self.probe_total(mesh_data.progress.total);
-				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
 
 				// Track time between probe completions for smoother animation
 				if (mesh_data.progress.current > prevPoint && self.lastProbeTime !== null) {
@@ -343,8 +357,29 @@ $(function () {
 				}
 				self.lastProbeTime = now;
 
+				// Adjust ETA to include time for current probe point
+				var reportedEta = mesh_data.progress.eta_seconds;
+				if (reportedEta !== null) {
+					// Add estimated time for current probe (reported ETA only covers remaining points)
+					var currentProbeTime = 0;
+					if (self.avgProbeDuration !== null) {
+						currentProbeTime = Math.round(self.avgProbeDuration / 1000);
+					} else if (reportedEta > 0) {
+						// Estimate from reported ETA if no measurements yet
+						var remainingPoints = mesh_data.progress.total - mesh_data.progress.current;
+						if (remainingPoints > 0) {
+							currentProbeTime = Math.round(reportedEta / remainingPoints);
+						}
+					}
+					self.probe_eta_seconds(reportedEta + currentProbeTime);
+				} else {
+					self.probe_eta_seconds(null);
+				}
+
 				// Set percentage to actual calculated value from server
-				var actualPct = (mesh_data.progress.current / mesh_data.progress.total) * 100;
+				// Use total+1 as denominator to reserve 100% for actual completion
+				var pctDenominator = mesh_data.progress.total + 1;
+				var actualPct = (mesh_data.progress.current / pctDenominator) * 100;
 				self.probe_percentage_internal(actualPct);
 				self.probe_percentage_display(Math.floor(actualPct));
 
@@ -378,6 +413,7 @@ $(function () {
 			self.lastProbeTime = null;
 			self.probeDurations = [];
 			self.avgProbeDuration = null;
+			self.animationTickInterval = null;
 			if ( self.save_mesh()) {
 				if (store_data) {
 					self.settingsViewModel.settings.plugins.bedlevelvisualizer.stored_mesh(mesh_data_z);
@@ -619,6 +655,7 @@ $(function () {
 					self.lastProbeTime = null;
 					self.probeDurations = [];
 					self.avgProbeDuration = null;
+					self.animationTickInterval = null;
 				}
 				});
 		};
