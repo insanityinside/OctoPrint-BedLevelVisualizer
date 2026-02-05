@@ -273,7 +273,12 @@ class bedlevelvisualizer(
 
 			# Calculate ETA based on time from probe 2 to current
 			eta_seconds = None
-			if current > 2 and self.probe_second_time is not None:
+			if current == 1:
+				# For first probe, use a default estimate of 10 seconds per point so the display looks reasonably sensible.
+				# May not be accurate depending on the printer, but it's better than a huge jump at probe 2
+				remaining_points = total
+				eta_seconds = int(10 * remaining_points)
+			elif current > 2 and self.probe_second_time is not None:
 				# Calculate average time per probe (excluding first probe)
 				elapsed_since_second = current_time - self.probe_second_time
 				probes_since_second = current - 2

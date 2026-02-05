@@ -115,16 +115,13 @@ $(function () {
 					var currentInternal = self.probe_percentage_internal();
 					currentInternal += incrementPerTick;
 
-				// Cap just below the next point's percentage to never exceed confirmed data
-				var maxInternalPct = nextPctFloat - 0.01;
-				currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
+				// Let the internal percentage animate smoothly without cap
 				self.probe_percentage_internal(currentInternal);
 
-				// Display integer percentage, capped at floor of next point minus 1
-				var displayPct = Math.floor(currentInternal);
-				var maxDisplayInt = Math.floor(nextPctFloat) - 1;
-					displayPct = Math.max(Math.floor(basePctFloat), Math.min(displayPct, maxDisplayInt));
-					self.probe_percentage_display(displayPct);
+				// Display percentage capped at floor of next point's percentage
+				var nextPointFloor = Math.floor(nextPctFloat);
+				var newDisplayPct = Math.floor(currentInternal);
+				self.probe_percentage_display(Math.min(newDisplayPct, nextPointFloor));
 				}
 			}, tickInterval);
 		};
