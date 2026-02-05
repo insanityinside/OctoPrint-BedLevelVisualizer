@@ -115,14 +115,14 @@ $(function () {
 					var currentInternal = self.probe_percentage_internal();
 					currentInternal += incrementPerTick;
 
-					// Cap at floor of next point's percentage minus 1 to never exceed confirmed data
-					var maxDisplayInt = Math.floor(nextPctFloat) - 1;
-					var maxInternalPct = maxDisplayInt + 0.99;
-					currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
-					self.probe_percentage_internal(currentInternal);
+				// Cap just below the next point's percentage to never exceed confirmed data
+				var maxInternalPct = nextPctFloat - 0.01;
+				currentInternal = Math.max(basePctFloat, Math.min(currentInternal, maxInternalPct));
+				self.probe_percentage_internal(currentInternal);
 
-					// Display integer capped at one below what next point would show
-					var displayPct = Math.floor(currentInternal);
+				// Display integer percentage, capped at floor of next point minus 1
+				var displayPct = Math.floor(currentInternal);
+				var maxDisplayInt = Math.floor(nextPctFloat) - 1;
 					displayPct = Math.max(Math.floor(basePctFloat), Math.min(displayPct, maxDisplayInt));
 					self.probe_percentage_display(displayPct);
 				}
