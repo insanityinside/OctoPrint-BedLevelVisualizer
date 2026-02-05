@@ -97,10 +97,11 @@ $(function () {
 			}
 			if (estimatedDuration !== null && estimatedDuration > 0) {
 				// Calculate interval to achieve target updates per probe, with min/max bounds
+				// Minimum 200ms to ensure no percentages are skipped
 				var interval = Math.floor(estimatedDuration / self.updatesPerProbe);
 				return Math.max(200, Math.min(interval, 1000)); // Clamp between 200ms and 1s
 			}
-			return 500; // Default fallback
+			return 200; // Default fallback
 		};
 		self.startAnimationTimer = function() {
 			self.stopAnimationTimer();
@@ -126,10 +127,17 @@ $(function () {
 					}
 					self.probe_percentage_internal(currentInternal);
 
-					// Display percentage capped at floor of next point's percentage
+					// Display percentage: increment by 1 whenever internal float reaches next integer
+					// This ensures every integer percentage is displayed
 					var nextPointFloor = Math.floor(nextPctFloat);
-					var newDisplayPct = Math.floor(currentInternal);
-					self.probe_percentage_display(Math.min(newDisplayPct, nextPointFloor));
+					var internalInt = Math.floor(currentInternal);
+					var cappedInt = Math.min(internalInt, nextPointFloor);
+					var currentDisplay = self.probe_percentage_display();
+
+					// If capped integer is higher than current display, increment display by 1
+					if (cappedInt > currentDisplay) {
+						self.probe_percentage_display(currentDisplay + 1);
+					}
 				}
 			}, tickInterval);
 		};
@@ -327,7 +335,7 @@ $(function () {
 			}
 			if (mesh_data.processing) {
 				self.processing(true);
-				// Reset progress when starting
+				// Reset progress on start
 				self.stopEtaCountdown();
 				self.stopAnimationTimer();
 				self.probe_current(0);
@@ -368,6 +376,7 @@ $(function () {
 
 				// Set percentage based on completed points: (current - 1) / total
 				// When current=1 (first probe), shows 0%. When current=total (last probe), shows ~98%
+				// based on a 7x7 mesh
 				var completedPoints = mesh_data.progress.current - 1;
 				var actualPct = (completedPoints / mesh_data.progress.total) * 100;
 				self.probe_percentage_internal(actualPct);
