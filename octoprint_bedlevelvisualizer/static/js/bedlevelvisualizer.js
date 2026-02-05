@@ -78,12 +78,17 @@ $(function () {
 		// Smooth animation timer with dynamic interval based on measured probe duration
 		self.calculateTickInterval = function() {
 			var estimatedDuration = null;
+			var currentPoint = self.probe_current();
+
 			if (self.avgProbeDuration !== null) {
 				estimatedDuration = self.avgProbeDuration;
+			} else if (currentPoint === 1) {
+				// For first probe, default to 10 seconds as a sane default. Not accurate for all printers,
+				// but prevents a huge jump in the progress bar for probe 1 while we've no data
+				estimatedDuration = 10000;
 			} else {
 				var eta = self.probe_eta_seconds();
 				var total = self.probe_total();
-				var currentPoint = self.probe_current();
 				// Include the current point being probed in remaining count
 				var remainingPoints = total - currentPoint + 1;
 				if (eta !== null && eta > 0 && remainingPoints > 0) {

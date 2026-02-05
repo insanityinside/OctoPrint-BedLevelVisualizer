@@ -25,6 +25,9 @@
 			<!-- ko if: probe_eta_formatted() -->
 			<div style="margin-top: 10px; font-size: 16px;">Estimated time remaining: <span data-bind="text: probe_eta_formatted"></span></div>
 			<!-- /ko -->
+			<!-- ko ifnot: probe_eta_formatted() -->
+			<div style="margin-top: 10px; font-size: 16px;">Estimating time remaining...</div>
+			<!-- /ko -->
 		</div>
 		<!-- /ko -->
 	</div>
