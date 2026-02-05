@@ -106,3 +106,20 @@ div.lower > div.turn_circle {
 .table thead tr.info .y-axis-label, .table tbody tr .y-axis-label, .table tfoot tr.info .y-axis-label, .table tfoot tr .x-axis-label {
     color: green;
 }
+
+/* Progress bar styles for mesh probing */
+.progress-bar-container {
+    width: 300px;
+    height: 20px;
+    background-color: #e0e0e0;
+    border-radius: 10px;
+    margin: 0 auto;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #5cb85c;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}

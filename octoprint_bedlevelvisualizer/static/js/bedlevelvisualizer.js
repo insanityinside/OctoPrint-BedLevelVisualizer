@@ -16,6 +16,14 @@ $(function () {
 		self.controlViewModel = parameters[1];
 		self.loginStateViewModel = parameters[2];
 
+		// Animation and timing constants
+		self.UPDATES_PER_PROBE = 10;  // Target number of progress updates per probe point
+		self.MIN_ANIMATION_INTERVAL_MS = 200;  // Minimum animation timer interval
+		self.MAX_ANIMATION_INTERVAL_MS = 1000;  // Maximum animation timer interval
+		self.ETA_COUNTDOWN_INTERVAL_MS = 1000;  // ETA countdown update interval
+		self.MAX_DURATION_HISTORY = 5;  // Number of probe durations to keep for averaging
+		self.DEFAULT_FIRST_PROBE_DURATION_MS = 10000;  // Default duration for first probe
+
 		self.processing = ko.observable(false);
 		self.mesh_data = ko.observableArray([]);
 		self.mesh_data_x = ko.observableArray([]);
@@ -35,7 +43,6 @@ $(function () {
 		self.lastProbeTime = null;
 		self.probeDurations = [];
 		self.avgProbeDuration = null;
-		self.updatesPerProbe = 10;  // Target number of progress updates per probe point
 		self.probe_percentage_internal = ko.observable(0);  // Float for smooth bar animation
 		self.probe_percentage_display = ko.observable(0);  // Integer for text display
 		self.probe_percentage = ko.computed(function() {
@@ -59,7 +66,7 @@ $(function () {
 				return hours + 'h ' + mins + 'm';
 			}
 		});
-		// ETA countdown timer (1 second interval for ETA display)
+		// ETA countdown timer
 		self.startEtaCountdown = function() {
 			self.stopEtaCountdown();
 			self.etaCountdownTimer = setInterval(function() {
@@ -67,7 +74,7 @@ $(function () {
 				if (currentEta !== null && currentEta > 0) {
 					self.probe_eta_seconds(currentEta - 1);
 				}
-			}, 1000);
+			}, self.ETA_COUNTDOWN_INTERVAL_MS);
 		};
 		self.stopEtaCountdown = function() {
 			if (self.etaCountdownTimer) {
@@ -83,9 +90,8 @@ $(function () {
 			if (self.avgProbeDuration !== null) {
 				estimatedDuration = self.avgProbeDuration;
 			} else if (currentPoint === 1) {
-				// For first probe, default to 10 seconds as a sane default. Not accurate for all printers,
-				// but prevents a huge jump in the progress bar for probe 1 while we've no data
-				estimatedDuration = 10000;
+				// Use the default estimated duration while we gather initial data
+				estimatedDuration = self.DEFAULT_FIRST_PROBE_DURATION_MS;
 			} else {
 				var eta = self.probe_eta_seconds();
 				var total = self.probe_total();
@@ -97,11 +103,10 @@ $(function () {
 			}
 			if (estimatedDuration !== null && estimatedDuration > 0) {
 				// Calculate interval to achieve target updates per probe, with min/max bounds
-				// Minimum 200ms to ensure no percentages are skipped
-				var interval = Math.floor(estimatedDuration / self.updatesPerProbe);
-				return Math.max(200, Math.min(interval, 1000)); // Clamp between 200ms and 1s
+				var interval = Math.floor(estimatedDuration / self.UPDATES_PER_PROBE);
+				return Math.max(self.MIN_ANIMATION_INTERVAL_MS, Math.min(interval, self.MAX_ANIMATION_INTERVAL_MS));
 			}
-			return 200; // Default fallback
+			return self.MIN_ANIMATION_INTERVAL_MS; // Default fallback
 		};
 		self.startAnimationTimer = function() {
 			self.stopAnimationTimer();
@@ -116,8 +121,8 @@ $(function () {
 					var nextPctFloat = (currentPoint / total) * 100;
 					var pctRange = nextPctFloat - basePctFloat;
 
-					// Increment by 1/updatesPerProbe of the range each tick
-					var incrementPerTick = pctRange / self.updatesPerProbe;
+					// Increment by 1/UPDATES_PER_PROBE of the range each tick
+					var incrementPerTick = pctRange / self.UPDATES_PER_PROBE;
 					var currentInternal = self.probe_percentage_internal();
 					currentInternal += incrementPerTick;
 
@@ -146,6 +151,22 @@ $(function () {
 				clearInterval(self.animationTimer);
 				self.animationTimer = null;
 			}
+		};
+		self.resetProgress = function() {
+			// Stop all active timers
+			self.stopEtaCountdown();
+			self.stopAnimationTimer();
+			// Reset all progress observables
+			self.probe_current(0);
+			self.probe_total(0);
+			self.probe_eta_seconds(null);
+			self.probe_percentage_internal(0);
+			self.probe_percentage_display(0);
+			// Reset timing history
+			self.lastProbeTime = null;
+			self.probeDurations = [];
+			self.avgProbeDuration = null;
+			self.animationTickInterval = null;
 		};
 		self.webcam_streamUrl = ko.computed(function(){
 			if(self.processing() && self.settingsViewModel.settings.plugins.bedlevelvisualizer.show_webcam() && (self.settingsViewModel.webcam_streamUrl() !== "")) {
@@ -314,18 +335,7 @@ $(function () {
 			if (mesh_data.error) {
 				clearTimeout(self.timeout);
 				self.processing(false);
-				// Reset progress on error
-				self.stopEtaCountdown();
-				self.stopAnimationTimer();
-				self.probe_current(0);
-				self.probe_total(0);
-				self.probe_eta_seconds(null);
-				self.probe_percentage_internal(0);
-				self.probe_percentage_display(0);
-				self.lastProbeTime = null;
-				self.probeDurations = [];
-				self.avgProbeDuration = null;
-				self.animationTickInterval = null;
+				self.resetProgress();
 				new PNotify({
 					title: 'Bed Visualizer Error',
 					text: '<div class="row-fluid"><p>Looks like your settings are not correct or there was an error.</p><p>Please see the <a href="https://github.com/jneilliii/OctoPrint-BedLevelVisualizer/#tips" target="_blank">Readme</a> for configuration tips.</p></div><p><pre style="padding-top: 5px;">'+_.escape(mesh_data.error)+'</pre></p>',
@@ -335,18 +345,7 @@ $(function () {
 			}
 			if (mesh_data.processing) {
 				self.processing(true);
-				// Reset progress on start
-				self.stopEtaCountdown();
-				self.stopAnimationTimer();
-				self.probe_current(0);
-				self.probe_total(0);
-				self.probe_eta_seconds(null);
-				self.probe_percentage_internal(0);
-				self.probe_percentage_display(0);
-				self.lastProbeTime = null;
-				self.probeDurations = [];
-				self.avgProbeDuration = null;
-				self.animationTickInterval = null;
+				self.resetProgress();
 			}
 			if (mesh_data.progress) {
 				var now = Date.now();
@@ -361,8 +360,8 @@ $(function () {
 				if (mesh_data.progress.current > prevPoint && self.lastProbeTime !== null) {
 					var duration = now - self.lastProbeTime;
 					self.probeDurations.push(duration);
-					// Keep only last 5 durations for averaging
-					if (self.probeDurations.length > 5) {
+					// Keep only last MAX_DURATION_HISTORY durations for averaging
+					if (self.probeDurations.length > self.MAX_DURATION_HISTORY) {
 						self.probeDurations.shift();
 					}
 					// Calculate average
@@ -401,18 +400,7 @@ $(function () {
 			// console.log(mesh_data_z);
 			clearTimeout(self.timeout);
 			self.processing(false);
-			// Reset progress
-			self.stopEtaCountdown();
-			self.stopAnimationTimer();
-			self.probe_current(0);
-			self.probe_total(0);
-			self.probe_eta_seconds(null);
-			self.probe_percentage_internal(0);
-			self.probe_percentage_display(0);
-			self.lastProbeTime = null;
-			self.probeDurations = [];
-			self.avgProbeDuration = null;
-			self.animationTickInterval = null;
+			self.resetProgress();
 			if ( self.save_mesh()) {
 				if (store_data) {
 					self.settingsViewModel.settings.plugins.bedlevelvisualizer.stored_mesh(mesh_data_z);
@@ -643,18 +631,7 @@ $(function () {
 				if(data.stopped){
 					clearTimeout(self.timeout);
 					self.processing(false);
-					// Reset progress
-					self.stopEtaCountdown();
-					self.stopAnimationTimer();
-					self.probe_current(0);
-					self.probe_total(0);
-					self.probe_eta_seconds(null);
-					self.probe_percentage_internal(0);
-					self.probe_percentage_display(0);
-					self.lastProbeTime = null;
-					self.probeDurations = [];
-					self.avgProbeDuration = null;
-					self.animationTickInterval = null;
+				self.resetProgress();
 				}
 				});
 		};

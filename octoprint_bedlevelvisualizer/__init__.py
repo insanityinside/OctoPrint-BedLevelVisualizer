@@ -239,6 +239,37 @@ class bedlevelvisualizer(
 			thread.start()
 		return
 
+	def _calculate_probe_eta(self, current, total, current_time):
+		"""
+		Calculate estimated time remaining for mesh probing.
+
+		Strategy: Ignore the first probe (often includes preheat delays)
+		and use time from probe 2 onward as baseline for average probe time.
+
+		Args:
+			current: Current probe point number (1-indexed)
+			total: Total number of probe points
+			current_time: Current timestamp from time.time()
+
+		Returns:
+			Estimated seconds remaining, or None if insufficient data
+		"""
+		eta_seconds = None
+		if current > 1 and self.probe_second_time is not None:
+			# Calculate average time per probe (excluding first probe)
+			elapsed_since_second = current_time - self.probe_second_time
+			probes_since_second = current - 2
+			if probes_since_second > 0:
+				avg_time_per_point = elapsed_since_second / probes_since_second
+				# Include current probe in remaining time (+1) since it's still being processed
+				remaining_points = total - current + 1
+				eta_seconds = int(avg_time_per_point * remaining_points)
+			else:
+				# Still on the second probe, estimate based on time since first
+				avg_time_per_point = self.probe_second_time - self.probe_first_time
+				eta_seconds = int(avg_time_per_point * (total - 1))
+		return eta_seconds
+
 	def process_gcode(self, comm, line, *args, **kwargs):
 		if self.printing and line.strip() == "echo:BEDLEVELVISUALIZER":
 			thread = threading.Thread(target=self.enable_mesh_collection)
@@ -259,33 +290,19 @@ class bedlevelvisualizer(
 			current_time = time.time()
 
 			# Track timing for ETA calculation
-			# We ignore the first probe timing because there's often a preheat delay
 			if current == 1:
 				# First probe - just record the time, don't use for averaging
 				self.probe_first_time = current_time
 				self.probe_second_time = None
 			elif current == 2:
-				# Second probe - this is our real timing baseline
+				# Second probe - first useful data
 				self.probe_second_time = current_time
 
 			self.probe_current = current
 			self.probe_total = total
 
-			# Calculate ETA based on time from probe 2 to current
-			eta_seconds = None
-			if current > 1 and self.probe_second_time is not None:
-				# Calculate average time per probe (excluding first probe)
-				elapsed_since_second = current_time - self.probe_second_time
-				probes_since_second = current - 2
-				if probes_since_second > 0:
-					avg_time_per_point = elapsed_since_second / probes_since_second
-					# Include current probe in remaining time (+1) since it's still being processed
-					remaining_points = total - current + 1
-					eta_seconds = int(avg_time_per_point * remaining_points)
-				else:
-					# If we're still on the second probe, we can only estimate based on the time elapsed since the first
-					avg_time_per_point = self.probe_second_time - self.probe_first_time
-					eta_seconds = int(avg_time_per_point * (total - 1))
+			# Calculate ETA based on timing data
+			eta_seconds = self._calculate_probe_eta(current, total, current_time)
 
 			# Send progress update to frontend
 			self._plugin_manager.send_plugin_message(
