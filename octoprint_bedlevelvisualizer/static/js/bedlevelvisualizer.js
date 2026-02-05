@@ -115,13 +115,16 @@ $(function () {
 					var currentInternal = self.probe_percentage_internal();
 					currentInternal += incrementPerTick;
 
-				// Let the internal percentage animate smoothly without cap
-				self.probe_percentage_internal(currentInternal);
+					// For the first probe, cap progress to the value shown at probe 2
+					if (currentPoint === 1) {
+						currentInternal = Math.min(currentInternal, nextPctFloat);
+					}
+					self.probe_percentage_internal(currentInternal);
 
-				// Display percentage capped at floor of next point's percentage
-				var nextPointFloor = Math.floor(nextPctFloat);
-				var newDisplayPct = Math.floor(currentInternal);
-				self.probe_percentage_display(Math.min(newDisplayPct, nextPointFloor));
+					// Display percentage capped at floor of next point's percentage
+					var nextPointFloor = Math.floor(nextPctFloat);
+					var newDisplayPct = Math.floor(currentInternal);
+					self.probe_percentage_display(Math.min(newDisplayPct, nextPointFloor));
 				}
 			}, tickInterval);
 		};
