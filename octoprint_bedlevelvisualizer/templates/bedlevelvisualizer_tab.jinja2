@@ -10,6 +10,9 @@
 <div class="row-fluid" id="bedlevelvisualizerwait" style="text-align: center;font-size: 25px;vertical-align: middle;padding-bottom: 25px;height: 465px;" data-bind="visible: processing() && (!settingsViewModel.settings.plugins.bedlevelvisualizer.show_webcam() || settingsViewModel.webcam_streamUrl() == '')">
 	<div class="row-fluid" style="padding-top: 180px;">
 		<i class="icon-spinner icon-spin icon-3"></i> <b>Please wait, retrieving current mesh.</b>
+		<!-- ko if: probe_total() === 0 -->
+		<div style="margin-top: 10px; font-size: 16px;">Initializing, please wait...</div>
+		<!-- /ko -->
 		<!-- ko if: probe_total() > 0 -->
 		<div style="margin-top: 20px; font-size: 18px;">
 			<div>Probing point <span data-bind="text: probe_current"></span> of <span data-bind="text: probe_total"></span></div>
