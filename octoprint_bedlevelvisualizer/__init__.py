@@ -273,7 +273,7 @@ class bedlevelvisualizer(
 
 			# Calculate ETA based on time from probe 2 to current
 			eta_seconds = None
-			if current > 2 and self.probe_second_time is not None:
+			if current > 1 and self.probe_second_time is not None:
 				# Calculate average time per probe (excluding first probe)
 				elapsed_since_second = current_time - self.probe_second_time
 				probes_since_second = current - 2
@@ -282,6 +282,10 @@ class bedlevelvisualizer(
 					# Include current probe in remaining time (+1) since it's still being processed
 					remaining_points = total - current + 1
 					eta_seconds = int(avg_time_per_point * remaining_points)
+				else:
+					# If we're still on the second probe, we can only estimate based on the time elapsed since the first
+					avg_time_per_point = self.probe_second_time - self.probe_first_time
+					eta_seconds = int(avg_time_per_point * (total - 1))
 
 			# Send progress update to frontend
 			self._plugin_manager.send_plugin_message(
