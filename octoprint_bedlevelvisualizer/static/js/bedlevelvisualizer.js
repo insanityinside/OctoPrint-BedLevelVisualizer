@@ -104,11 +104,10 @@ $(function () {
 			self.animationTimer = setInterval(function() {
 				var total = self.probe_total();
 				var currentPoint = self.probe_current();
-				// Use total+1 as denominator to reserve 100% for actual completion
-				var pctDenominator = total + 1;
+				// Use (current - 1) to show 0% at start and avoid 100% until completion
 				if (total > 0 && currentPoint <= total) {
-					var basePctFloat = (currentPoint / pctDenominator) * 100;
-					var nextPctFloat = ((currentPoint + 1) / pctDenominator) * 100;
+					var basePctFloat = ((currentPoint - 1) / total) * 100;
+					var nextPctFloat = (currentPoint / total) * 100;
 					var pctRange = nextPctFloat - basePctFloat;
 
 					// Increment by 1/updatesPerProbe of the range each tick
@@ -362,10 +361,10 @@ $(function () {
 				// ETA is calculated by the backend and includes time for the current probe
 				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
 
-				// Set percentage to actual calculated value from server
-				// Use total+1 as denominator to reserve 100% for actual completion
-				var pctDenominator = mesh_data.progress.total + 1;
-				var actualPct = (mesh_data.progress.current / pctDenominator) * 100;
+				// Set percentage based on completed points: (current - 1) / total
+				// When current=1 (first probe), shows 0%. When current=total (last probe), shows ~98%
+				var completedPoints = mesh_data.progress.current - 1;
+				var actualPct = (completedPoints / mesh_data.progress.total) * 100;
 				self.probe_percentage_internal(actualPct);
 				self.probe_percentage_display(Math.floor(actualPct));
 
