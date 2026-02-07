@@ -45,6 +45,9 @@ class bedlevelvisualizer(
 		self.probe_total = 0
 		self.probe_first_time = None
 		self.probe_second_time = None
+		self.probe_total_override_value = None
+		self.probe_total_override_max_seen = 0
+		self.probe_point_message_count = 0
 		self._logger = logging.getLogger(
 			"octoprint.plugins.bedlevelvisualizer")
 		self._bedlevelvisualizer_logger = logging.getLogger(
@@ -115,7 +118,10 @@ class bedlevelvisualizer(
 			camera_position="-1.25,-1.25,0.25",
 			date_locale_format="",
 			graph_height="450px",
-			show_prusa_adjustments=False
+			show_prusa_adjustments=False,
+			probe_total_override="",
+			auto_probe_total=True,
+			last_probe_total=0
 		)
 
 	def get_settings_version(self):
@@ -135,6 +141,20 @@ class bedlevelvisualizer(
 
 	def on_settings_save(self, data):
 		old_debug_logging = self._settings.get_boolean(["debug_logging"])
+		probe_total_override = data.get("probe_total_override")
+		if probe_total_override is not None:
+			probe_total_override = str(probe_total_override).strip()
+			if probe_total_override != "":
+				try:
+					probe_total_override_int = int(probe_total_override)
+				except (TypeError, ValueError):
+					raise ValueError(
+						"Probe total override must be a positive integer."
+					)
+				if probe_total_override_int <= 0:
+					raise ValueError(
+						"Probe total override must be a positive integer."
+					)
 
 		octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
 
@@ -221,6 +241,9 @@ class bedlevelvisualizer(
 		self.probe_total = 0
 		self.probe_first_time = None
 		self.probe_second_time = None
+		self.probe_total_override_value = None
+		self.probe_total_override_max_seen = 0
+		self.probe_point_message_count = 0
 		self._bedlevelvisualizer_logger.debug("mesh collection started")
 		self.processing = True
 		self._plugin_manager.send_plugin_message(
@@ -270,6 +293,26 @@ class bedlevelvisualizer(
 				eta_seconds = int(avg_time_per_point * (total - 1))
 		return eta_seconds
 
+	def _get_probe_total_override(self):
+		auto_probe_total = self._settings.get_boolean(["auto_probe_total"])
+		if auto_probe_total:
+			last_probe_total = self._settings.get_int(["last_probe_total"])
+			if last_probe_total > 0:
+				return last_probe_total
+		value = self._settings.get(["probe_total_override"])
+		if value is None:
+			return None
+		value_str = str(value).strip()
+		if value_str == "":
+			return None
+		try:
+			value_int = int(value_str)
+		except (TypeError, ValueError):
+			return None
+		if value_int <= 0:
+			return None
+		return value_int
+
 	def process_gcode(self, comm, line, *args, **kwargs):
 		if self.printing and line.strip() == "echo:BEDLEVELVISUALIZER":
 			thread = threading.Thread(target=self.enable_mesh_collection)
@@ -286,7 +329,23 @@ class bedlevelvisualizer(
 		probing_match = self.regex_probing_point.search(line)
 		if probing_match:
 			current = int(probing_match.group(1))
-			total = int(probing_match.group(2))
+			reported_total = int(probing_match.group(2))
+			total = reported_total
+			self.probe_point_message_count += 1
+			override_total = self._get_probe_total_override()
+			total_note = None
+			if override_total is not None:
+				self.probe_total_override_value = override_total
+				if override_total < reported_total:
+					total = override_total
+					total_note = "Using previously configured total probe count for estimation."
+				elif override_total > reported_total:
+					total = reported_total
+					total_note = "Reported total is lower than configured ({}); using reported values.".format(override_total)
+			else:
+				self.probe_total_override_value = None
+			if current > self.probe_total_override_max_seen:
+				self.probe_total_override_max_seen = current
 			current_time = time.time()
 
 			# Track timing for ETA calculation
@@ -311,6 +370,8 @@ class bedlevelvisualizer(
 					progress=dict(
 						current=current,
 						total=total,
+						reported_total=reported_total,
+						total_note=total_note,
 						eta_seconds=eta_seconds
 					)
 				)
@@ -531,6 +592,53 @@ class bedlevelvisualizer(
 				self._identifier, dict(mesh=self.mesh, bed=self.bed)
 			)
 			self.send_mesh_data_collected_event(self.mesh, self.bed)
+
+			stored_last_probe_total = self._settings.get_int(["last_probe_total"])
+			auto_probe_total = self._settings.get_boolean(["auto_probe_total"])
+			measured_total = self.probe_point_message_count
+			if auto_probe_total:
+				if measured_total != stored_last_probe_total:
+					diff = measured_total - stored_last_probe_total
+					self._plugin_manager.send_plugin_message(
+						self._identifier,
+						dict(
+							auto_probe_total_update=dict(
+								previous=stored_last_probe_total,
+								current=measured_total,
+								diff=diff,
+							)
+						),
+					)
+				self._settings.set(["probe_total_override"], str(measured_total) if measured_total > 0 else "")
+			else:
+				if (
+					self.probe_total_override_value is not None
+					and measured_total > 0
+					and measured_total != self.probe_total_override_value
+				):
+					self._plugin_manager.send_plugin_message(
+						self._identifier,
+						dict(
+							warning=dict(
+								type="probe_total_override_exceeded",
+								configured=self.probe_total_override_value,
+								observed=measured_total,
+							)
+						),
+					)
+
+			self._settings.set(["last_probe_total"], measured_total)
+			self._settings.save()
+			self._plugin_manager.send_plugin_message(
+				self._identifier,
+				dict(
+					probe_total_state=dict(
+						last_probe_total=measured_total,
+						probe_total_override=self._settings.get(["probe_total_override"]),
+						auto_probe_total=auto_probe_total,
+					)
+				),
+			)
 
 		return line
 

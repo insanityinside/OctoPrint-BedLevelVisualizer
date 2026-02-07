@@ -3,6 +3,7 @@
 		<h4>Bed Visualizer Settings <small>Version {{ plugin_bedlevelvisualizer_plugin_version }}</small></h4>
 		<ul class="nav nav-tabs" id="bedlevelvisualizer_tabs">
 			<li class="active"><a data-toggle="tab" href="#bedlevelvisualizer_mesh_collection">Collection</a></li>
+			<li><a data-toggle="tab" href="#bedlevelvisualizer_progress_reporting">Progress Reporting</a></li>
 			<li><a data-toggle="tab" href="#bedlevelvisualizer_mesh_visualization">Visualization</a></li>
 			<li><a data-toggle="tab" href="#bedlevelvisualizer_stored_data">Data</a></li>
 			<li><a data-toggle="tab" href="#bedlevelvisualizer_corrections">Corrections</a></li>
@@ -72,6 +73,25 @@
 						<div class="input-append" title="Timeout value that will stop processing of visualizer in seconds." data-toggle="tooltip">
 							<input type="number" min="0" step="10" id="bedlevelvisualizer_timeout" class="input-mini text-right" data-bind="value: settingsViewModel.settings.plugins.bedlevelvisualizer.timeout">
 							<span class="add-on">secs</span>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div id="bedlevelvisualizer_progress_reporting" class="tab-pane">
+				<div class="row-fluid">
+					<label class="well">Probing status is reported natively for Marlin-based printers and only partially for non-Marlin firmware. A total probe count is required to accurately display completion percentage and time estimates for non-Marlin printers. You can also use this for Marlin printers that skip probes so the percentage/time estimate is more accurate. Leave blank to auto-detect from first run where possible.</label>
+					<div class="control-group span4">
+						<label class="checkbox" for="bedlevelvisualizer_auto_probe_total" style="margin-bottom: 5px;">
+							<input class="input-checkbox" type="checkbox" id="bedlevelvisualizer_auto_probe_total"
+									 data-bind="checked: settingsViewModel.settings.plugins.bedlevelvisualizer.auto_probe_total"/>
+							Automatically calculate number of probe points based on previous mesh update
+						</label>
+					</div>
+					<div class="control-group span4">
+						<label for="bedlevelvisualizer_probe_total_override">Total probe points (override)</label>
+						<div class="controls">
+							<input type="number" min="1" step="1" id="bedlevelvisualizer_probe_total_override" class="input-small" data-bind="value: settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override, disable: settingsViewModel.settings.plugins.bedlevelvisualizer.auto_probe_total" placeholder="Auto">
 						</div>
 					</div>
 				</div>

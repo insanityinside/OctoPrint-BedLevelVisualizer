@@ -37,6 +37,7 @@ $(function () {
 		self.probe_current = ko.observable(0);
 		self.probe_total = ko.observable(0);
 		self.probe_eta_seconds = ko.observable(null);
+		self.probe_total_note = ko.observable(null);
 		self.etaCountdownTimer = null;
 		self.animationTimer = null;
 		self.animationTickInterval = null;
@@ -160,6 +161,7 @@ $(function () {
 			self.probe_current(0);
 			self.probe_total(0);
 			self.probe_eta_seconds(null);
+			self.probe_total_note(null);
 			self.probe_percentage_internal(0);
 			self.probe_percentage_display(0);
 			// Reset timing history
@@ -241,6 +243,7 @@ $(function () {
 			self.descending_x(self.settingsViewModel.settings.plugins.bedlevelvisualizer.descending_x());
 			self.descending_y(self.settingsViewModel.settings.plugins.bedlevelvisualizer.descending_y());
 			self.graph_z_limits(self.settingsViewModel.settings.plugins.bedlevelvisualizer.graph_z_limits());
+			self.syncProbeTotalOverrideFromLast();
 		};
 
 		self.onAfterBinding = function() {
@@ -254,9 +257,45 @@ $(function () {
 					self.settings_active(false);
 				}
 			});
+			$(document).on('click', '.blv-open-progress-settings', function(event) {
+				event.preventDefault();
+				$('#settings_dialog').modal('show');
+				$('a[href="#settings_plugin_bedlevelvisualizer"]').tab('show');
+				$('#bedlevelvisualizer_tabs a[href="#bedlevelvisualizer_progress_reporting"]').tab('show');
+			});
+			self.settingsViewModel.settings.plugins.bedlevelvisualizer.auto_probe_total.subscribe(function() {
+				self.syncProbeTotalOverrideFromLast();
+			});
+		};
+
+		self.syncProbeTotalOverrideFromLast = function() {
+			if (self.settingsViewModel.settings.plugins.bedlevelvisualizer.auto_probe_total()) {
+				var lastProbeTotal = self.settingsViewModel.settings.plugins.bedlevelvisualizer.last_probe_total();
+				if (lastProbeTotal && lastProbeTotal > 0) {
+					self.settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override(lastProbeTotal.toString());
+				} else {
+					self.settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override('');
+				}
+			}
 		};
 
 		self.onSettingsBeforeSave = function() {
+			self.syncProbeTotalOverrideFromLast();
+			var probeTotalOverride = self.settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override();
+			if (probeTotalOverride !== undefined && probeTotalOverride !== null) {
+				var overrideValue = probeTotalOverride.toString().trim();
+				if (overrideValue.length > 0) {
+					if (!/^[0-9]+$/.test(overrideValue) || parseInt(overrideValue, 10) <= 0) {
+						new PNotify({
+							title: 'Bed Visualizer Settings',
+							text: 'Total probe points must be a positive integer or left blank for Auto.',
+							type: 'error',
+							hide: false
+						});
+						return false;
+					}
+				}
+			}
 			self.settingsViewModel.settings.plugins.bedlevelvisualizer.screw_hub(self.screw_hub());
 			self.settingsViewModel.settings.plugins.bedlevelvisualizer.mesh_unit(self.mesh_unit());
 			self.settingsViewModel.settings.plugins.bedlevelvisualizer.reverse(self.reverse());
@@ -283,6 +322,7 @@ $(function () {
 			self.save_mesh(self.settingsViewModel.settings.plugins.bedlevelvisualizer.save_mesh());
 			self.save_snapshots(self.settingsViewModel.settings.plugins.bedlevelvisualizer.save_snapshots());
 			self.graph_z_limits(self.settingsViewModel.settings.plugins.bedlevelvisualizer.graph_z_limits());
+			self.syncProbeTotalOverrideFromLast();
 		};
 
 		self.onDataUpdaterPluginMessage = function (plugin, mesh_data) {
@@ -372,6 +412,7 @@ $(function () {
 
 				// ETA is calculated by the backend and includes time for the current probe
 				self.probe_eta_seconds(mesh_data.progress.eta_seconds);
+				self.probe_total_note(mesh_data.progress.total_note || null);
 
 				// Set percentage based on completed points: (current - 1) / total
 				// When current=1 (first probe), shows 0%. When current=total (last probe), shows ~98%
@@ -391,6 +432,41 @@ $(function () {
 				// console.log('Resetting timeout to ' + mesh_data.timeout_override + ' seconds.');
 				clearTimeout(self.timeout);
 				self.timeout = setTimeout(function() {self.cancelMeshUpdate();new PNotify({title: 'Bed Visualizer Error',text: '<div class="row-fluid">Timeout occured before processing completed. Processing may still be running or there may be a configuration error. Consider increasing the Processing Timeout value in settings and restart OctoPrint.</div>',type: 'error',hide: false});}, (mesh_data.timeout_override*1000));
+			}
+			if (mesh_data.warning && mesh_data.warning.type === 'probe_total_override_exceeded') {
+				var configuredTotal = mesh_data.warning.configured;
+				var observedTotal = mesh_data.warning.observed;
+				var relation = observedTotal > configuredTotal ? 'greater than' : 'less than';
+				new PNotify({
+					title: 'Bed Visualizer Warning',
+					text: 'Configured total probe points (' + configuredTotal + ') is ' + relation + ' the number of points probed (' + observedTotal + '). <a href="#" class="blv-open-progress-settings">Review Progress Reporting settings</a>.',
+					type: 'notice',
+					hide: false
+				});
+			}
+			if (mesh_data.auto_probe_total_update) {
+				var previousTotal = mesh_data.auto_probe_total_update.previous;
+				var currentTotal = mesh_data.auto_probe_total_update.current;
+				var diff = mesh_data.auto_probe_total_update.diff;
+				var diffText = diff === 0 ? 'no change' : (diff > 0 ? '+' + diff : diff);
+				new PNotify({
+					title: 'Bed Visualizer Update',
+					text: 'Updated total probe points from ' + previousTotal + ' to ' + currentTotal + ' (' + diffText + ').',
+					type: 'notice',
+					hide: false
+				});
+				self.settingsViewModel.settings.plugins.bedlevelvisualizer.last_probe_total(currentTotal);
+				if (self.settingsViewModel.settings.plugins.bedlevelvisualizer.auto_probe_total()) {
+					self.settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override(currentTotal.toString());
+				}
+			}
+			if (mesh_data.probe_total_state) {
+				self.settingsViewModel.settings.plugins.bedlevelvisualizer.last_probe_total(mesh_data.probe_total_state.last_probe_total);
+				if (mesh_data.probe_total_state.probe_total_override !== undefined) {
+					self.settingsViewModel.settings.plugins.bedlevelvisualizer.probe_total_override(mesh_data.probe_total_state.probe_total_override);
+				}
+				self.syncProbeTotalOverrideFromLast();
+				console.log('[Bed Visualizer] probe_total_state', mesh_data.probe_total_state);
 			}
 			return;
 		};
