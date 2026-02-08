@@ -178,7 +178,7 @@ $(function () {
 		self.mesh_status = ko.computed(function(){
 			if(self.processing()){
 				if (self.probe_total() > 0) {
-					var status = 'Probing point ' + self.probe_current() + '/' + self.probe_total() + ' (' + self.probe_percentage_display() + '%)';
+					var status = self.probe_percentage_display() + '% complete';
 					if (self.probe_eta_formatted()) {
 						status += ' - ETA: ' + self.probe_eta_formatted();
 					}
