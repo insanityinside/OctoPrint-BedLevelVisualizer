@@ -89,16 +89,16 @@ $(function () {
 
 			if (self.avgProbeDuration !== null) {
 				estimatedDuration = self.avgProbeDuration;
-			} else if (currentPoint === 1) {
-				// Use the default estimated duration while we gather initial data
-				estimatedDuration = self.DEFAULT_FIRST_PROBE_DURATION_MS;
 			} else {
+				// Use backend ETA (available from probe 1 when cached data exists)
 				var eta = self.probe_eta_seconds();
 				var total = self.probe_total();
-				// Include the current point being probed in remaining count
 				var remainingPoints = total - currentPoint + 1;
 				if (eta !== null && eta > 0 && remainingPoints > 0) {
-					estimatedDuration = (eta / remainingPoints) * 1000; // Convert to ms
+					estimatedDuration = (eta / remainingPoints) * 1000;
+				} else if (currentPoint === 1) {
+					// True first run, no cached data - use default
+					estimatedDuration = self.DEFAULT_FIRST_PROBE_DURATION_MS;
 				}
 			}
 			if (estimatedDuration !== null && estimatedDuration > 0) {

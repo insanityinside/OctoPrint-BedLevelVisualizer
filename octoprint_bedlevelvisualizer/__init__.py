@@ -115,11 +115,13 @@ class bedlevelvisualizer(
 			camera_position="-1.25,-1.25,0.25",
 			date_locale_format="",
 			graph_height="450px",
-			show_prusa_adjustments=False
+			show_prusa_adjustments=False,
+			cached_execution_time=0,
+			cached_probe_count=0
 		)
 
 	def get_settings_version(self):
-		return 1
+		return 2
 
 	def on_settings_migrate(self, target, current=None):
 		if current is None or current < 1:
@@ -132,6 +134,9 @@ class bedlevelvisualizer(
 				command["message"] = ""
 				commands_new.append(command)
 			self._settings.set(["commands"], commands_new)
+		if current is not None and current < 2:
+			self._settings.set_int(["cached_execution_time"], 0)
+			self._settings.set_int(["cached_probe_count"], 0)
 
 	def on_settings_save(self, data):
 		old_debug_logging = self._settings.get_boolean(["debug_logging"])
@@ -221,7 +226,12 @@ class bedlevelvisualizer(
 		self.probe_total = 0
 		self.probe_first_time = None
 		self.probe_second_time = None
-		self._bedlevelvisualizer_logger.debug("mesh collection started")
+		# Load cached timing data from previous run
+		self.cached_execution_time = self._settings.get_int(["cached_execution_time"])
+		self.cached_probe_count = self._settings.get_int(["cached_probe_count"])
+		self._bedlevelvisualizer_logger.debug(
+			"mesh collection started, cached: time=%ss, probes=%s" %
+			(self.cached_execution_time, self.cached_probe_count))
 		self.processing = True
 		self._plugin_manager.send_plugin_message(
 			self._identifier, dict(processing=True)
@@ -268,6 +278,18 @@ class bedlevelvisualizer(
 				# Still on the second probe, estimate based on time since first
 				avg_time_per_point = self.probe_second_time - self.probe_first_time
 				eta_seconds = int(avg_time_per_point * (total - 1))
+		elif current == 1 and self.cached_execution_time > 0 and self.cached_probe_count > 0:
+			# First probe: use cached data from previous run
+			if total == self.cached_probe_count:
+				# Cache hit: same grid config, use cached total time
+				eta_seconds = self.cached_execution_time
+			else:
+				# Cache invalidation: grid changed, derive from per-probe average
+				avg_time_per_point = float(self.cached_execution_time) / self.cached_probe_count
+				eta_seconds = int(avg_time_per_point * total)
+				self._bedlevelvisualizer_logger.debug(
+					"probe count changed (%s -> %s), using derived estimate"
+					% (self.cached_probe_count, total))
 		return eta_seconds
 
 	def process_gcode(self, comm, line, *args, **kwargs):
@@ -526,6 +548,16 @@ class bedlevelvisualizer(
 
 			self.processing = False
 			self.print_mesh_debug("Final mesh:", self.mesh)
+
+			# Cache execution time and probe count for future runs
+			if self.probe_first_time is not None and self.probe_total > 0:
+				total_time = int(time.time() - self.probe_first_time)
+				self._settings.set_int(["cached_execution_time"], total_time)
+				self._settings.set_int(["cached_probe_count"], self.probe_total)
+				self._settings.save()
+				self._bedlevelvisualizer_logger.debug(
+					"cached probe data: time=%ss, probes=%s"
+					% (total_time, self.probe_total))
 
 			self._plugin_manager.send_plugin_message(
 				self._identifier, dict(mesh=self.mesh, bed=self.bed)

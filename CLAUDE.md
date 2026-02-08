@@ -23,22 +23,23 @@ Plugin for OctoPrint that visualizes bed mesh leveling data from various firmwar
 - Don't over-engineer solutions - this is a hobbyist project
 
 ## Progress Bar Feature Context
+- Work with GitHub issues at insanityinside/OctoPrint-BedLevelVisualizer ("origin" in git)
 
-**Current implementation**: Real-time ETA countdown during G29 bed probing
-- Backend tracks probe timing and calculates ETA
-- Frontend polls for progress updates (currently 200ms interval)
+**Current implementation**: Real-time progress bar, percentage, and ETA countdown during G29 bed probing
+- Backend tracks probe timing via WebSocket events (not polling), calculates ETA
+- Caches total execution time and probe count to OctoPrint settings after each successful run
+- On subsequent runs, cached data provides ETA from the first probe onwards
+- Cache invalidation: if probe count changes (grid config changed), derives per-probe estimate from cached data
+- Smooth animation with dynamic tick intervals (200ms-1000ms)
 - Supports variable grid sizes (3x3 through 10x10 tested)
-- Progress starts at 0%, measures actual probe duration for accuracy
-
-**Known issues/TODOs**:
-- 200ms polling interval may be excessive, investigate optimization
-- Initial messages before probing starts need refinement
-- Need to test with non-Marlin firmware (Klipper, Prusa Firmware, and Smoothieware)
+- Marlin only currently; non-Marlin firmware tracked in issues #2-4
 
 **Design decisions**:
-- Moved ETA calculation to backend (more accurate than frontend timing)
-- Using measured probe timing rather than estimates (handles varying bed sizes)
-- Progress bar animation smoothed to reduce jerkiness on larger grids
+- ETA calculation in backend (more accurate than frontend timing)
+- Measured probe timing takes over from cached estimates once probe 2 arrives
+- Cached execution time (#6) preferred over counting/storing probe points (#5, closed) — simpler, firmware-agnostic foundation
+- "Probing point X of Y" display removed — redundant with progress bar/percentage, and eliminating it sidesteps the skipped-points accuracy problem
+- Frontend `calculateTickInterval` priority: measured average → backend ETA → 10s default (last resort, true first run only)
 
 ## Common Tasks
 - Adding new firmware support (follow existing parser patterns)
@@ -52,25 +53,20 @@ Plugin for OctoPrint that visualizes bed mesh leveling data from various firmwar
 - Don't add type hints everywhere (Python 2.7 compat)
 - Skip the "we should add comprehensive tests" speech
 
-**Active**: Progress tracking during bed mesh probing (progress-bar branch)
-- Progress bar, percentage, ETA now working for Marlin
-- Need to handle skipped probe points (Marlin skips out-of-range points)
-- Need to add non-Marlin firmware support (Klipper, Prusa, Smoothieware)
-
-**Next priorities**:
-1. Store/use previous probe counts to handle skipped points accurately
-2. Klipper support (different output format, no probe count in messages)
-
-See GitHub issues for detailed specs.
-
 ## Current Work
-Recent: Adding progress indicators during G29/mesh probing operations
+Branch: `progress-bar`
+
+**Completed**:
+- Progress bar, percentage, ETA working for Marlin
+- Removed "Probing point X of Y" display (redundant)
+- Cached execution time and probe count (#6) — stored in plugin settings, used for first-probe ETA and cache invalidation
+- Closed #5 (superseded by #6)
 
 **Next priorities**:
-1. Handle skipped probe points - see issue #1 for detailed spec
-2. Add support for Klipper/Klippy - issue #2
-3. Add support for Prusa Firmware if possible - issue #3
-4. Add support for Smoothieware if possible - issue #4
+1. Probe-gated progress (#1) — use probe messages as checkpoints to cap progress bar, prevent it outrunning reality. Depends on #6 (done). Handles stall detection.
+2. Klipper support (#2) — different probe message format, no count/total. Research needed.
+3. Prusa Firmware (#3) — Marlin fork, may already work. Research needed.
+4. Smoothieware (#4) — independent firmware. Research needed.
 
 ## Useful References
 - OctoPrint plugin docs: https://docs.octoprint.org/en/master/plugins/
